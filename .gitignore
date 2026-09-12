@@ -1,0 +1,5 @@
+client/.venv/
+__pycache__/
+*.pyc
+build/
+.cache/
