@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cat-Feeding-Inator</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header>
+  <h1>🐈 Cat-Feeding-Inator</h1>
+  <span id="conn" class="pill">connecting…</span>
+</header>
+
+<main>
+  <section class="card">
+    <h2>Status</h2>
+    <div class="grid">
+      <div>Scheduler <strong id="st-running">–</strong></div>
+      <div>Next feed <strong id="st-next">–</strong></div>
+      <div>Last feed <strong id="st-last">–</strong></div>
+      <div>Motor (ESP32) <strong id="st-motor">–</strong></div>
+      <div>Target <strong id="st-target">–</strong></div>
+      <div>Plan <strong id="st-plan">–</strong></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Feed schedule</h2>
+    <label>Mode
+      <select id="cfg-mode">
+        <option value="schedule">Daily times</option>
+        <option value="interval">Repeat every N seconds</option>
+      </select>
+    </label>
+    <label>ESP32 STA IP <input id="cfg-ip" inputmode="numeric"></label>
+    <label>ESP32 port <input id="cfg-port" type="number" min="1" max="65535"></label>
+    <label id="row-times">Daily times (HH:MM, comma-separated)
+      <input id="cfg-times" placeholder="07:00,18:00"></label>
+    <label id="row-interval" hidden>Repeat every (seconds)
+      <input id="cfg-interval" type="number" step="1" min="1"></label>
+    <label>Motor-on seconds <input id="cfg-duration" type="number" step="0.5" min="0.5"></label>
+    <div class="row">
+      <button id="btn-save">Save</button>
+      <button id="btn-start" class="go">Start</button>
+      <button id="btn-stop" class="danger">Stop</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Manual control</h2>
+    <div class="row">
+      <button id="btn-feed" class="go">Feed now</button>
+    </div>
+    <p class="hint">Feed now runs one full cycle (run → wait → stop) in the background.</p>
+  </section>
+
+  <section class="card">
+    <h2>Events</h2>
+    <pre id="events">–</pre>
+  </section>
+</main>
+
+<div id="toast" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>

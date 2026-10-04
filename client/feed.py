@@ -64,7 +64,11 @@ def main() -> int:
     base = f"http://{args.ip}:{args.port}"
 
     print(f"POST {base}/motor/run ...")
-    code, body = post(base, "/motor/run", args.timeout)
+    try:
+        code, body = post(base, "/motor/run", args.timeout)
+    except Exception as exc:
+        print(f"ERROR: run request failed: {exc}", file=sys.stderr)
+        return 1
     print(f"run -> {code} {body}")
     if code == 409:
         print("Feed rejected (busy).", file=sys.stderr)
