@@ -15,7 +15,14 @@ set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 FRONTEND_PORT="${FRONTEND_PORT:-6606}"
 BACKEND_PORT="${BACKEND_PORT:-6607}"
-HOST="${HOST:-127.0.0.1}"
+HOST="${HOST:-0.0.0.0}"
+# Built React app (npm run build in client/frontend). Falls back to
+# client/frontend for the legacy vanilla UI.
+if [ -d "$ROOT/client/frontend/dist" ]; then
+  FRONTEND_DIR="$ROOT/client/frontend/dist"
+else
+  FRONTEND_DIR="$ROOT/client/frontend"
+fi
 PID_DIR="$ROOT/.pids"
 LOG_DIR="$ROOT/.logs"
 BACKEND_PID="$PID_DIR/backend.pid"
@@ -35,7 +42,7 @@ cmd_start() {
     >"$LOG_DIR/backend.log" 2>&1 &
   echo $! >"$BACKEND_PID"
   nohup python3 -m http.server "$FRONTEND_PORT" --bind "$HOST" \
-    --directory "$ROOT/client/frontend" >"$LOG_DIR/frontend.log" 2>&1 &
+    --directory "$FRONTEND_DIR" >"$LOG_DIR/frontend.log" 2>&1 &
   echo $! >"$FRONTEND_PID"
   sleep 1
   echo "Frontend: http://$HOST:$FRONTEND_PORT"

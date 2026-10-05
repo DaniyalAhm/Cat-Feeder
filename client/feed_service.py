@@ -64,12 +64,12 @@ def parse_times(raw: str) -> list[datetime.time]:
             hh, mm = part.split(":")
             t = datetime.time(int(hh), int(mm))
         except ValueError:
-            raise SystemExit(f"Bad time {part!r}: use HH:MM 24h, e.g. 07:00,18:30")
+            raise ValueError(f"Bad time {part!r}: use HH:MM 24h, e.g. 07:00,18:30")
         if not (0 <= t.hour <= 23 and 0 <= t.minute <= 59):
-            raise SystemExit(f"Bad time {part!r}: hour 0-23, minute 0-59")
+            raise ValueError(f"Bad time {part!r}: hour 0-23, minute 0-59")
         out.append(t)
     if not out:
-        raise SystemExit("No feed times given. Use --times HH:MM[,HH:MM...]")
+        raise ValueError("No feed times given. Use HH:MM[,HH:MM...]")
     return sorted(out)
 
 
@@ -181,7 +181,10 @@ def main() -> int:
                 nxt = time.monotonic()  # overrun: restart cadence now
         return 0
 
-    times = parse_times(times_raw)
+    try:
+        times = parse_times(times_raw)
+    except ValueError as exc:
+        raise SystemExit(str(exc))
     label = ",".join(t.strftime("%H:%M") for t in times)
     print(f"Feeder schedule: daily at {label} (local) -> {base}, {duration:.1f}s per feed")
 

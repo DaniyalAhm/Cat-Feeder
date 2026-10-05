@@ -83,8 +83,10 @@ def run_feed(reason: str) -> None:
 
 
 def scheduler_loop() -> None:
-    next_at: float | None = None
+    interval_next: float | None = None
+    schedule_next: datetime.datetime | None = None
     seen_version = -1
+    seen_mode: str | None = None
     while not STOP_EVENT.is_set():
         with LOCK:
             running, mode = STATE["running"], STATE["mode"]
@@ -92,30 +94,52 @@ def scheduler_loop() -> None:
             times = list(STATE["times"])
             interval = STATE["interval"]
         if not running:
-            next_at = None
+            interval_next = None
+            schedule_next = None
             seen_version = version
+            seen_mode = mode
             STOP_EVENT.wait(1)
             continue
+        # Config changed or mode switched -> recompute targets.
+        if version != seen_version or mode != seen_mode:
+            interval_next = None
+            schedule_next = None
+            seen_version = version
+            seen_mode = mode
         now = datetime.datetime.now()
         if mode == "interval":
-            if next_at is None or version != seen_version:
-                next_at = time.monotonic() + interval
-                seen_version = version
+            if interval_next is None:
+                interval_next = time.monotonic() + interval
             with LOCK:
                 STATE["next"] = time.strftime(
-                    "%H:%M:%S", time.localtime(time.time() + max(0, next_at - time.monotonic())))
-            if time.monotonic() >= next_at:
+                    "%H:%M:%S", time.localtime(time.time() + max(0, interval_next - time.monotonic())))
+            if time.monotonic() >= interval_next:
                 threading.Thread(target=run_feed, args=("cycle",), daemon=True).start()
-                next_at += interval
+                interval_next += interval
             STOP_EVENT.wait(1)
         else:
-            nxt = next_fire(
-                [datetime.time(int(t[:2]), int(t[3:])) for t in times], now)
+            if not times:
+                with LOCK:
+                    STATE["next"] = "-"
+                STOP_EVENT.wait(5)
+                continue
+            try:
+                parsed = [datetime.time(int(t[:2]), int(t[3:])) for t in times]
+            except (ValueError, IndexError):
+                with LOCK:
+                    STATE["next"] = "-"
+                STOP_EVENT.wait(5)
+                continue
+            if schedule_next is None:
+                schedule_next = next_fire(parsed, now)
             with LOCK:
-                STATE["next"] = nxt.strftime("%Y-%m-%d %H:%M")
-            if now >= nxt:
+                STATE["next"] = schedule_next.strftime("%Y-%m-%d %H:%M")
+            if now >= schedule_next:
                 threading.Thread(target=run_feed, args=("schedule",), daemon=True).start()
-                time.sleep(61)  # move past this slot
+                # Move past this slot so we don't refire; compute from now.
+                schedule_next = next_fire(parsed, now + datetime.timedelta(seconds=61))
+                with LOCK:
+                    STATE["next"] = schedule_next.strftime("%Y-%m-%d %H:%M")
             STOP_EVENT.wait(5)
 
 
@@ -241,7 +265,7 @@ class Handler(BaseHTTPRequestHandler):
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=6607)
-    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--times", default="")
     parser.add_argument("--ip", default=os.environ.get("FEEDER_IP", "10.0.0.128"))
     parser.add_argument("--duration", type=float, default=6.0)
@@ -257,8 +281,11 @@ def main() -> int:
         except (OSError, ValueError):
             pass
     if args.times:
-        STATE["mode"] = "schedule"
-        STATE["times"] = [t.strftime("%H:%M") for t in parse_times(args.times)]
+        try:
+            STATE["mode"] = "schedule"
+            STATE["times"] = [t.strftime("%H:%M") for t in parse_times(args.times)]
+        except ValueError as exc:
+            parser.error(str(exc))
     if "--ip" in sys.argv or "FEEDER_IP" in os.environ:
         STATE["ip"] = args.ip
     if "--duration" in sys.argv:

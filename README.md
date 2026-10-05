@@ -111,21 +111,26 @@ Stdlib-only HTTP scripts (no extra deps). BLE scripts need `pip install -r requi
 Proper split UI for configuring feeding:
 
 ```bash
-scripts/service.sh start [--times 07:00,18:00]   # frontend :6606, backend :6607
+scripts/dev.sh [--times 07:00,18:00] [-- vite args...]  # foreground: backend + Vite dev
+scripts/service.sh start [--times 07:00,18:00]   # background prod: frontend :6606, backend :6607
 scripts/service.sh status
 scripts/service.sh stop
 ```
 
-- Frontend `http://localhost:6606` (`client/frontend/`, static, no build
-  step): live status cards, schedule form (daily times or repeat-every-N
-  mode, ESP32 IP/port, motor seconds), Start/Stop/Feed-now, event log
-  (polls the backend every 3s).
+- Frontend `http://localhost:6606` (`client/frontend/`, React + Vite + TS +
+  Tailwind, `npm run build` → `dist/`, served statically): live status cards,
+  schedule form (daily times or repeat-every-N mode, ESP32 IP/port, motor
+  seconds) with client validation, Start/Stop/Feed-now with loading states,
+  event log (polls the backend every 3s with backoff). Legacy vanilla UI kept
+  in `client/frontend/legacy-vanilla/`. Dev: `npm run dev` (proxies `/api` to
+  `:6607`); prod override: `VITE_API_URL=http://host:6607 npm run build`.
 - Backend `http://localhost:6607` (`client/backend.py`, stdlib only):
   `GET /api/status`, `POST /api/config|start|stop|feed-now`,
   `GET /api/events`, plus a live ESP32 `/status` proxy. Runs the
   scheduler in-process, persists `client/schedule.json`.
-- Env overrides: `FRONTEND_PORT`, `BACKEND_PORT`, `HOST`. Logs go to
-  `.logs/`, PIDs to `.pids/`.
+- Env overrides: `FRONTEND_PORT`, `BACKEND_PORT`, `HOST` (default `0.0.0.0`, so
+  the UI/API are reachable as `http://toddheadquarters:6606` from the LAN).
+  Logs go to `.logs/`, PIDs to `.pids/`.
 
 ## Troubleshooting
 
