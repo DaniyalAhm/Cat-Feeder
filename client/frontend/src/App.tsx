@@ -28,7 +28,7 @@ export default function App() {
       <main className="mx-auto flex max-w-[620px] flex-col gap-4 p-4">
         <StatusCard status={status} />
         <ScheduleForm status={status} onToast={showToast} onSaved={refresh} />
-        <ManualControl onToast={showToast} onDone={refresh} />
+        <ManualControl onToast={showToast} onDone={refresh} feedDuration={status?.duration ?? 6} />
         <EventLog events={events} />
       </main>
 

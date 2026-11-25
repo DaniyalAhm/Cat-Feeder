@@ -31,6 +31,4 @@ export const getEvents = (signal?: AbortSignal) =>
 export const postConfig = (cfg: ConfigPayload) =>
   api<{ ok: boolean }>('/config', { method: 'POST', body: JSON.stringify(cfg) });
 
-export const postStart = () => api<{ ok: boolean }>('/start', { method: 'POST' });
-export const postStop = () => api<{ ok: boolean }>('/stop', { method: 'POST' });
 export const postFeedNow = () => api<{ ok: boolean }>('/feed-now', { method: 'POST' });

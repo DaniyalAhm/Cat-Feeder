@@ -13,7 +13,6 @@ function planLabel(s: FeederStatus): string {
 export function StatusCard({ status }: { status: FeederStatus | null }) {
   const rows: Array<[string, string]> = status
     ? [
-        ['Scheduler', status.running ? '▶ running' : '⏸ stopped'],
         ['Next feed', status.next || '–'],
         ['Last feed', status.last || '–'],
         ['Motor (ESP32)', motorLabel(status)],
@@ -21,7 +20,6 @@ export function StatusCard({ status }: { status: FeederStatus | null }) {
         ['Plan', planLabel(status)],
       ]
     : [
-        ['Scheduler', '–'],
         ['Next feed', '–'],
         ['Last feed', '–'],
         ['Motor (ESP32)', '–'],

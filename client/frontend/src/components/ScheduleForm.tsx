@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { postConfig, postStart, postStop } from '../api/client';
+import { postConfig } from '../api/client';
 import type { FeederStatus } from '../api/types';
 import { validateSchedule } from './validate';
 
@@ -46,7 +46,6 @@ export function ScheduleForm({ status, onToast, onSaved }: Props) {
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [toggling, setToggling] = useState(false);
 
   // Echo backend state into the form until the user edits it.
   useEffect(() => {
@@ -109,24 +108,6 @@ export function ScheduleForm({ status, onToast, onSaved }: Props) {
       onToast('Save failed: ' + (e as Error).message);
     } finally {
       setSaving(false);
-    }
-  };
-
-  const toggle = async (action: 'start' | 'stop') => {
-    setToggling(true);
-    try {
-      if (action === 'start') {
-        await postStart();
-        onToast('Scheduler started');
-      } else {
-        await postStop();
-        onToast('Scheduler stopped');
-      }
-      onSaved();
-    } catch (e) {
-      onToast(`${action === 'start' ? 'Start' : 'Stop'} failed: ` + (e as Error).message);
-    } finally {
-      setToggling(false);
     }
   };
 
@@ -267,22 +248,6 @@ export function ScheduleForm({ status, onToast, onSaved }: Props) {
           className="rounded-md border border-zinc-400 bg-zinc-100 px-4 py-2 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-800"
         >
           {saving ? 'Saving…' : 'Save'}
-        </button>
-        <button
-          type="button"
-          onClick={() => toggle('start')}
-          disabled={toggling}
-          className="rounded-md bg-emerald-600 px-4 py-2 text-white disabled:opacity-50"
-        >
-          Start
-        </button>
-        <button
-          type="button"
-          onClick={() => toggle('stop')}
-          disabled={toggling}
-          className="rounded-md bg-red-600 px-4 py-2 text-white disabled:opacity-50"
-        >
-          Stop
         </button>
       </div>
     </section>

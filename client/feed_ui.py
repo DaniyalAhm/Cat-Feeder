@@ -12,12 +12,13 @@ Usage:
 Then open http://localhost:8080 in a browser.
 
 Pages/API (all on the UI port):
-  GET  /            form + status (IP, times, duration, running, next feed)
+  GET  /            form + status (IP, times, duration, next feed)
   POST /save        save config (also writes client/schedule.json)
-  POST /start       start the scheduler
-  POST /stop        stop the scheduler
-  POST /feed-now    feed once immediately
+  POST /feed-now    feed once immediately (409 while a manual feed is
+                       running, 429 during the 1s cooldown after it finishes)
   GET  /status      JSON status (for polling)
+
+The scheduler is always running; there are no start/stop controls.
 """
 
 import argparse
@@ -37,12 +38,15 @@ STATE = {
     "port": 80,
     "duration": 6.0,
     "times": ["07:00", "18:00"],
-    "running": False,
+    "running": True,  # always on; no start/stop controls
     "next": "-",
     "last": "-",
 }
 LOCK = threading.Lock()
 STOP_EVENT = threading.Event()
+MANUAL_COOLDOWN_S = 1.0
+MANUAL_BUSY = False  # a manual feed thread is currently running
+MANUAL_LAST_FINISH = 0.0  # time.monotonic() when the last manual feed finished
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "schedule.json")
 
 
@@ -115,20 +119,19 @@ def next_fire(times: list[str], now: datetime.datetime) -> datetime.datetime:
 def scheduler_loop() -> None:
     while not STOP_EVENT.is_set():
         with LOCK:
-            running, times = STATE["running"], list(STATE["times"])
+            times = list(STATE["times"])
             base = f"http://{STATE['ip']}:{STATE['port']}"
             duration = STATE["duration"]
-        if running:
-            nxt = next_fire(times, datetime.datetime.now())
+        nxt = next_fire(times, datetime.datetime.now())
+        with LOCK:
+            STATE["next"] = nxt.strftime("%Y-%m-%d %H:%M")
+        if datetime.datetime.now() >= nxt:
+            # nudge past this slot so we don't double-fire
+            time.sleep(61)
+            result = do_feed(base, duration)
             with LOCK:
-                STATE["next"] = nxt.strftime("%Y-%m-%d %H:%M")
-            if datetime.datetime.now() >= nxt:
-                # nudge past this slot so we don't double-fire
-                time.sleep(61)
-                result = do_feed(base, duration)
-                with LOCK:
-                    STATE["last"] = (
-                        f"{datetime.datetime.now().strftime('%H:%M')} {result}")
+                STATE["last"] = (
+                    f"{datetime.datetime.now().strftime('%H:%M')} {result}")
         STOP_EVENT.wait(5)
 
 
@@ -154,18 +157,18 @@ button{padding:.5em 1em;font-size:1em;cursor:pointer}
 </form></div>
 <div class="card"><h3>Control</h3>
 <div class="row">
-<button onclick="act('/start')">Start schedule</button>
-<button onclick="act('/stop')">Stop schedule</button>
-<button onclick="act('/feed-now')">Feed now</button>
+<button id="feedbtn" onclick="act('/feed-now')">Feed now</button>
 </div>
 <div id="msg"></div></div>
 <script>
+let feedDuration=6, feedLocked=false;
 async function refresh(){try{const r=await fetch('/status');const s=await r.json();
+if(isFinite(Number(s.duration))&&Number(s.duration)>0){feedDuration=Number(s.duration);}
 document.getElementById('status').innerHTML=
-'Running: <b>'+s.running+'</b><br>Next feed: <b>'+s.next+'</b><br>Last: '+s.last+
+'Next feed: <b>'+s.next+'</b><br>Last: '+s.last+
 '<br>Target: '+s.ip+':'+s.port+' @ '+s.duration+'s ['+s.times+']';}catch(e){}}
-async function act(p){const m=document.getElementById('msg');m.textContent='…';
-try{const r=await fetch(p,{method:'POST'});m.textContent=await r.text();refresh();}catch(e){m.textContent='error: '+e;}}
+async function act(p){if(p==='/feed-now'&&feedLocked){document.getElementById('msg').textContent='wait for the feed to finish plus 1s';return;}const m=document.getElementById('msg');m.textContent='…';
+try{const r=await fetch(p,{method:'POST'});const t=await r.text();m.textContent=t;if(p==='/feed-now'&&r.ok){feedLocked=true;const b=document.getElementById('feedbtn');if(b){b.disabled=true;b.textContent='Feeding…';setTimeout(()=>b.textContent='Wait…',Math.max(0,feedDuration*1000));setTimeout(()=>{feedLocked=false;b.disabled=false;b.textContent='Feed now';},feedDuration*1000+1000);}}refresh();}catch(e){m.textContent='error: '+e;}}
 setInterval(refresh,5000);refresh();</script>
 </body></html>"""
 
@@ -228,25 +231,34 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             return
 
-        if self.path == "/start":
-            with LOCK:
-                STATE["running"] = True
-            self._send(200, "scheduler started", "text/plain")
-            return
-
-        if self.path == "/stop":
-            with LOCK:
-                STATE["running"] = False
-                STATE["next"] = "-"
-            self._send(200, "scheduler stopped", "text/plain")
-            return
-
         if self.path == "/feed-now":
+            global MANUAL_BUSY, MANUAL_LAST_FINISH
             with LOCK:
+                if MANUAL_BUSY:
+                    self._send(409, "busy: manual feed running", "text/plain")
+                    return
+                elapsed = time.monotonic() - MANUAL_LAST_FINISH
+                if MANUAL_LAST_FINISH and elapsed < MANUAL_COOLDOWN_S:
+                    self._send(
+                        429, f"cooldown: wait {MANUAL_COOLDOWN_S - elapsed:.1f}s",
+                        "text/plain")
+                    return
+                MANUAL_BUSY = True
                 base = f"http://{STATE['ip']}:{STATE['port']}"
                 duration = STATE["duration"]
-            threading.Thread(target=lambda: do_feed(base, duration),
-                             daemon=True).start()
+
+            def run_manual() -> None:
+                # Cooldown starts when the feed *finishes*
+                # (a feed lasts ~duration, e.g. 6s), not when triggered.
+                try:
+                    do_feed(base, duration)
+                finally:
+                    global MANUAL_BUSY, MANUAL_LAST_FINISH
+                    with LOCK:
+                        MANUAL_BUSY = False
+                        MANUAL_LAST_FINISH = time.monotonic()
+
+            threading.Thread(target=run_manual, daemon=True).start()
             self._send(200, "feed triggered (runs in background)", "text/plain")
             return
 

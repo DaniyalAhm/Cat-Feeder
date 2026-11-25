@@ -7,11 +7,11 @@ Runs the feeding scheduler in-process.
 Endpoints (all under /api):
   GET  /api/status    {config..., running, next, last, esp}
   POST /api/config    {ip, port, mode, times, interval, duration} -> saved
-  POST /api/start     start scheduler
-  POST /api/stop      stop scheduler
-  POST /api/feed-now  feed once in background
+  POST /api/feed-now  feed once in background (409 while a manual feed
+                       is running, 429 during the 1s cooldown after it finishes)
   GET  /api/events    recent event log (newest last)
 
+The scheduler is always running; there are no start/stop controls.
 Config is persisted to client/schedule.json.
 
 Usage:
@@ -43,14 +43,17 @@ STATE = {
     "times": ["07:00", "18:00"],
     "interval": 3.0,
     "duration": 6.0,
-    "running": False,
+    "running": True,             # always on; no start/stop controls
     "next": "-",
     "last": "-",
-    "version": 0,                # bumped on config/start/stop
+    "version": 0,                # bumped on config change
 }
 EVENTS: deque = deque(maxlen=50)
 LOCK = threading.Lock()
 STOP_EVENT = threading.Event()
+MANUAL_COOLDOWN_S = 1.0
+MANUAL_BUSY = False  # a manual feed thread is currently running
+MANUAL_LAST_FINISH = 0.0  # time.monotonic() when the last manual feed finished
 
 
 def log(msg: str) -> None:
@@ -82,6 +85,18 @@ def run_feed(reason: str) -> None:
     log(f"feed ({reason}): {'ok' if ok else 'FAILED'}")
 
 
+def run_manual_feed() -> None:
+    # Cooldown starts when the feed *finishes* (a feed lasts ~duration,
+    # e.g. 6s), not when it is triggered.
+    try:
+        run_feed("manual")
+    finally:
+        global MANUAL_BUSY, MANUAL_LAST_FINISH
+        with LOCK:
+            MANUAL_BUSY = False
+            MANUAL_LAST_FINISH = time.monotonic()
+
+
 def scheduler_loop() -> None:
     interval_next: float | None = None
     schedule_next: datetime.datetime | None = None
@@ -89,17 +104,10 @@ def scheduler_loop() -> None:
     seen_mode: str | None = None
     while not STOP_EVENT.is_set():
         with LOCK:
-            running, mode = STATE["running"], STATE["mode"]
+            mode = STATE["mode"]
             version = STATE["version"]
             times = list(STATE["times"])
             interval = STATE["interval"]
-        if not running:
-            interval_next = None
-            schedule_next = None
-            seen_version = version
-            seen_mode = mode
-            STOP_EVENT.wait(1)
-            continue
         # Config changed or mode switched -> recompute targets.
         if version != seen_version or mode != seen_mode:
             interval_next = None
@@ -237,25 +245,21 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(200, {"ok": True})
             return
 
-        if self.path == "/api/start":
-            with LOCK:
-                STATE["running"] = True
-                STATE["version"] += 1
-            log("scheduler started")
-            self._send_json(200, {"ok": True})
-            return
-
-        if self.path == "/api/stop":
-            with LOCK:
-                STATE["running"] = False
-                STATE["next"] = "-"
-                STATE["version"] += 1
-            log("scheduler stopped")
-            self._send_json(200, {"ok": True})
-            return
-
         if self.path == "/api/feed-now":
-            threading.Thread(target=run_feed, args=("manual",), daemon=True).start()
+            global MANUAL_BUSY
+            with LOCK:
+                if MANUAL_BUSY:
+                    self._send_json(
+                        409, {"ok": False, "error": "busy: manual feed running"})
+                    return
+                elapsed = time.monotonic() - MANUAL_LAST_FINISH
+                if MANUAL_LAST_FINISH and elapsed < MANUAL_COOLDOWN_S:
+                    wait = MANUAL_COOLDOWN_S - elapsed
+                    self._send_json(
+                        429, {"ok": False, "error": f"cooldown: wait {wait:.1f}s"})
+                    return
+                MANUAL_BUSY = True
+            threading.Thread(target=run_manual_feed, daemon=True).start()
             self._send_json(200, {"ok": True})
             return
 

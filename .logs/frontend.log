@@ -1,3 +1,16 @@
-127.0.0.1 - - [04/Oct/2026 18:52:05] "GET / HTTP/1.1" 200 -
-127.0.0.1 - - [04/Oct/2026 18:52:05] "GET / HTTP/1.1" 200 -
-10.0.0.186 - - [04/Oct/2026 18:52:06] "GET / HTTP/1.1" 200 -
+
+  VITE v5.4.21  ready in 380 ms
+
+  ➜  Local:   http://localhost:6606/
+  ➜  Network: http://10.0.0.186:6606/
+  ➜  Network: http://100.120.20.99:6606/
+  ➜  Network: http://172.22.0.1:6606/
+  ➜  Network: http://172.27.0.1:6606/
+  ➜  Network: http://172.19.0.1:6606/
+  ➜  Network: http://172.21.0.1:6606/
+  ➜  Network: http://172.20.0.1:6606/
+  ➜  Network: http://172.31.0.1:6606/
+  ➜  Network: http://172.23.0.1:6606/
+  ➜  Network: http://172.18.0.1:6606/
+  ➜  Network: http://172.24.0.1:6606/
+  ➜  Network: http://172.26.0.1:6606/

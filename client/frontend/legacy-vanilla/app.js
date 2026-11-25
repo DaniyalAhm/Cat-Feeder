@@ -20,10 +20,14 @@ async function api(path, opts = {}) {
   return body;
 }
 
+let feedDuration = 6;
+
 function renderStatus(s) {
   $("conn").textContent = "connected";
   $("conn").className = "pill ok";
-  $("st-running").textContent = s.running ? "▶ running" : "⏸ stopped";
+  if (Number.isFinite(Number(s.duration)) && Number(s.duration) > 0) {
+    feedDuration = Number(s.duration);
+  }
   $("st-next").textContent = s.next;
   $("st-last").textContent = s.last;
   $("st-motor").textContent =
@@ -87,17 +91,22 @@ async function save() {
 
 $("btn-save").onclick = save;
 $("cfg-mode").onchange = syncModeRow;
-$("btn-start").onclick = async () => {
-  try { await api("/start", { method: "POST" }); toast("Scheduler started"); refresh(); }
-  catch (e) { toast("Start failed: " + e.message); }
-};
-$("btn-stop").onclick = async () => {
-  try { await api("/stop", { method: "POST" }); toast("Scheduler stopped"); refresh(); }
-  catch (e) { toast("Stop failed: " + e.message); }
-};
+let feedLocked = false;
 $("btn-feed").onclick = async () => {
+  if (feedLocked) { toast("Wait for the feed to finish plus 1s"); return; }
+  const btn = $("btn-feed");
   try { await api("/feed-now", { method: "POST" }); toast("Feed triggered"); refresh(); }
-  catch (e) { toast("Feed failed: " + e.message); }
+  catch (e) {
+    if (/busy/i.test(e.message)) { toast("Feed already running — wait for it to finish"); return; }
+    if (/cooldown|429/i.test(e.message)) { toast("Wait 1s after the feed finishes"); return; }
+    toast("Feed failed: " + e.message); return;
+  }
+  // Lock covers the whole feed (~duration) + 1s cooldown after it finishes.
+  feedLocked = true;
+  btn.disabled = true;
+  btn.textContent = "Feeding…";
+  setTimeout(() => { btn.textContent = "Wait…"; }, Math.max(0, feedDuration * 1000));
+  setTimeout(() => { feedLocked = false; btn.disabled = false; btn.textContent = "Feed now"; }, feedDuration * 1000 + 1000);
 };
 
 syncModeRow();
